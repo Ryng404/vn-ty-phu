@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cờ Tỷ Phú Việt Nam</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="screen-home">
+  <div class="home-card">
+    <h1>Cờ Tỷ Phú Việt Nam</h1>
+    <p class="tagline">Mua bán tỉnh thành, thu tiền thuê, làm giàu cùng bạn bè — chơi online theo thời gian thực.</p>
+
+    <div class="field">
+      <label>Tên của bạn</label>
+      <input type="text" id="input-name" placeholder="Nhập tên hiển thị" maxlength="18">
+    </div>
+    <div class="field">
+      <label>Màu quân cờ</label>
+      <div id="color-swatches"></div>
+      <input type="hidden" id="input-color">
+    </div>
+
+    <div class="home-actions">
+      <button id="btn-create-room" class="btn primary">Tạo phòng mới</button>
+    </div>
+    <div class="field" style="margin-top:18px;">
+      <label>Hoặc tham gia bằng mã phòng</label>
+      <div class="join-row">
+        <input type="text" id="input-code" placeholder="VD: AB12CD" maxlength="6" style="text-transform:uppercase;">
+        <button id="btn-join-room" class="btn">Tham gia</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="screen-lobby" class="hidden">
+  <div class="lobby-card">
+    <h2>Mã phòng</h2>
+    <div class="code" id="lobby-code">——</div>
+    <ul id="lobby-players"></ul>
+    <button id="btn-start-game" class="btn primary">Bắt đầu ván chơi</button>
+    <p id="lobby-wait-msg" class="hidden">Đang chờ chủ phòng bắt đầu ván chơi…</p>
+  </div>
+</section>
+
+<section id="screen-game" class="hidden">
+  <div id="board-wrap"><div id="board"></div></div>
+  <div id="side-panel">
+    <div id="winner-banner" class="hidden"></div>
+    <div class="panel-box">
+      <h2>Người chơi</h2>
+      <div id="players-panel"></div>
+    </div>
+    <div class="panel-box" id="controls">
+      <h2>Lượt chơi</h2>
+      <div id="turn-info"></div>
+      <div id="dice-result"></div>
+      <button id="btn-roll" class="btn primary hidden">🎲 Đổ xúc xắc</button>
+      <button id="btn-roll-jail" class="btn hidden">🎲 Thử ra tù (đổ đôi)</button>
+      <button id="btn-pay-bail" class="btn hidden">Nộp 50tr để ra tù</button>
+      <div id="buy-box" class="hidden"></div>
+      <button id="btn-end-turn" class="btn primary hidden">Kết thúc lượt →</button>
+    </div>
+    <div class="panel-box">
+      <h2>Nhật ký ván chơi</h2>
+      <div id="log-panel"></div>
+    </div>
+  </div>
+</section>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
