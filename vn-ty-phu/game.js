@@ -9,6 +9,12 @@ import {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PLAYER_COLORS = ['#c1272d', '#2a6f97', '#2e7d4f', '#c9a227', '#7b4fa0', '#d9712b'];
+const PLAYER_AVATARS = ['💼', '🚀', '🐯', '🎩', '🦊', '🦁'];
+function avatarFor(color) {
+  const i = PLAYER_COLORS.indexOf(color);
+  return PLAYER_AVATARS[i >= 0 ? i : 0];
+}
+function delay(ms) { return new Promise(res => setTimeout(res, ms)); }
 
 // ---------- Phiên của trình duyệt này ----------
 function getSession() {
@@ -24,6 +30,7 @@ const SESSION = getSession();
 // ---------- Trạng thái cục bộ ----------
 let room = null;       // bản ghi room hiện tại từ Supabase
 let channel = null;
+let lastSeenMoveSeq = 0;   // chống phát lại hoạt ảnh di chuyển khi tải lại trang
 
 // ---------- DOM ----------
 const $ = (sel) => document.querySelector(sel);
@@ -70,6 +77,8 @@ async function createRoom(name, color) {
     pendingTile: null,
     log: ['Phòng đã được tạo. Đang chờ người chơi khác...'],
     winner: null,
+    moveSeq: 0,
+    moveInfo: null,
   };
   const { data, error } = await supabase
     .from('rooms')
@@ -106,6 +115,7 @@ async function updateRoom(id, patch) {
 
 function enterRoom(row) {
   room = row;
+  lastSeenMoveSeq = row.state?.moveSeq || 0;
   if (channel) supabase.removeChannel(channel);
   channel = supabase
     .channel('room-' + row.id)
@@ -123,6 +133,8 @@ function isMyTurn(state) {
 }
 
 function sendToJail(state, player) {
+  state.moveSeq = (state.moveSeq || 0) + 1;
+  state.moveInfo = { kind: 'jump', playerId: player.id, to: JAIL_INDEX };
   player.position = JAIL_INDEX;
   player.inJail = true;
   player.jailTurns = 0;
@@ -187,10 +199,15 @@ function drawCard(state, player, deckName) {
     sendToJail(state, player);
     state.phase = 'rolled';
   } else if (card.type === 'moveTo') {
+    state.moveSeq = (state.moveSeq || 0) + 1;
+    state.moveInfo = { kind: 'jump', playerId: player.id, to: card.to };
     player.position = card.to;
     resolveTile(state, player, card.to);
   } else if (card.type === 'moveRelative') {
+    const fromPos = player.position;
     const newPos = (player.position + card.amount + BOARD_SIZE) % BOARD_SIZE;
+    state.moveSeq = (state.moveSeq || 0) + 1;
+    state.moveInfo = { kind: 'walk', playerId: player.id, from: fromPos, steps: card.amount };
     player.position = newPos;
     resolveTile(state, player, newPos);
   }
@@ -226,7 +243,10 @@ function resolveTile(state, player, idx) {
 }
 
 function movePlayer(state, player, steps) {
+  const fromPos = player.position;
   const newPos = (player.position + steps) % BOARD_SIZE;
+  state.moveSeq = (state.moveSeq || 0) + 1;
+  state.moveInfo = { kind: 'walk', playerId: player.id, from: fromPos, steps };
   if (newPos < player.position) {
     player.money += PASS_GO_BONUS;
     pushLog(state, `${player.name} đi qua Khởi Hành, nhận ${PASS_GO_BONUS} triệu.`);
@@ -248,6 +268,22 @@ async function doStartGame() {
   state.phase = 'idle';
   pushLog(state, 'Ván chơi bắt đầu! Chúc may mắn.');
   await updateRoom(room.id, { status: 'playing', state });
+}
+
+async function doRollDiceAnimated() {
+  const state0 = room.state;
+  if (!isMyTurn(state0) || state0.phase !== 'idle') return;
+  const el = $('#dice-result');
+  el.classList.add('shaking');
+  const timer = setInterval(() => {
+    const a = 1 + Math.floor(Math.random() * 6);
+    const b = 1 + Math.floor(Math.random() * 6);
+    el.textContent = `🎲 ${a}  🎲 ${b}`;
+  }, 70);
+  await delay(480);
+  clearInterval(timer);
+  el.classList.remove('shaking');
+  await doRollDice();
 }
 
 async function doRollDice() {
@@ -344,6 +380,84 @@ function tilePosition(i) {
   return { row: 7 - (i - 21), col: 0 };
 }
 
+function tilePercent(i) {
+  const p = tilePosition(i);
+  return { left: (p.col / 7) * 100, top: (p.row / 7) * 100 };
+}
+
+// lệch nhẹ vị trí quân cờ trong cùng 1 ô để không chồng khít lên nhau
+const TOKEN_OFFSETS = [
+  { x: -14, y: -14 }, { x: 14, y: -14 }, { x: -14, y: 14 },
+  { x: 14, y: 14 }, { x: 0, y: -18 }, { x: 0, y: 18 },
+];
+
+function placeToken(el, tileIndex, offsetIdx) {
+  const pct = tilePercent(tileIndex);
+  const off = TOKEN_OFFSETS[offsetIdx % TOKEN_OFFSETS.length];
+  el.style.left = `calc(${pct.left}% + ${off.x}px)`;
+  el.style.top = `calc(${pct.top}% + ${off.y}px)`;
+}
+
+function syncPawnLayer(state) {
+  const layer = $('#pawn-layer');
+  const alive = state.players.filter(p => !p.bankrupt);
+  const aliveIds = new Set(alive.map(p => p.id));
+
+  // dọn quân cờ của người chơi đã phá sản / không còn trong phòng
+  [...layer.children].forEach(el => { if (!aliveIds.has(el.dataset.pid)) el.remove(); });
+
+  // tạo quân cờ còn thiếu
+  for (const p of alive) {
+    if (!layer.querySelector(`[data-pid="${p.id}"]`)) {
+      const el = document.createElement('div');
+      el.className = 'pawn-token';
+      el.dataset.pid = p.id;
+      el.style.background = p.color;
+      el.textContent = avatarFor(p.color);
+      el.title = p.name;
+      layer.appendChild(el);
+      placeToken(el, p.position, alive.indexOf(p));
+    }
+  }
+
+  const info = state.moveInfo;
+  const isNewMove = (state.moveSeq || 0) > lastSeenMoveSeq;
+  lastSeenMoveSeq = state.moveSeq || 0;
+
+  if (isNewMove && info && aliveIds.has(info.playerId)) {
+    const mover = alive.find(p => p.id === info.playerId);
+    const el = layer.querySelector(`[data-pid="${info.playerId}"]`);
+    const idx = alive.indexOf(mover);
+    if (el && mover) { playMoveAnimation(el, info, mover.position, idx); return; }
+  }
+
+  // không có hoạt ảnh để phát — đặt thẳng vị trí hiện tại
+  alive.forEach((p, idx) => {
+    const el = layer.querySelector(`[data-pid="${p.id}"]`);
+    if (el) placeToken(el, p.position, idx);
+  });
+}
+
+async function playMoveAnimation(el, info, finalPos, offsetIdx) {
+  if (info.kind === 'walk') {
+    const steps = info.steps;
+    const dir = steps >= 0 ? 1 : -1;
+    const count = Math.abs(steps);
+    let pos = info.from;
+    for (let k = 0; k < count; k++) {
+      pos = (pos + dir + BOARD_SIZE) % BOARD_SIZE;
+      placeToken(el, pos, offsetIdx);
+      await delay(110);
+    }
+  } else {
+    el.classList.add('pop');
+    placeToken(el, info.to, offsetIdx);
+    await delay(260);
+    el.classList.remove('pop');
+  }
+  placeToken(el, finalPos, offsetIdx);
+}
+
 function fmt(n) { return n.toLocaleString('vi-VN'); }
 
 function tileLabel(tile) {
@@ -395,19 +509,17 @@ function renderGame() {
     div.innerHTML = `
       ${tile.group ? '<div class="swatch"></div>' : ''}
       <div class="tname">${tileLabel(tile)}</div>
-      ${tile.price ? `<div class="tprice">${fmt(tile.price)}tr</div>` : ''}
-      ${owner ? `<div class="towner" style="background:${owner.color}">${owner.name}</div>` : ''}
-      <div class="pawns"></div>
+      ${tile.price ? `<div class="tprice">🪙 ${fmt(tile.price)}tr</div>` : ''}
+      ${owner ? `
+        <svg class="building-icon" viewBox="0 0 24 24" style="fill:${owner.color}"><path d="M12 3 2 12h3v9h5v-6h4v6h5v-9h3z"/></svg>
+        <div class="towner" style="background:${owner.color}">${owner.name}</div>
+      ` : ''}
     `;
-    const pawnsEl = div.querySelector('.pawns');
-    state.players.filter(p => p.position === tile.i && !p.bankrupt).forEach(p => {
-      const pawn = document.createElement('span');
-      pawn.className = 'pawn'; pawn.style.background = p.color; pawn.title = p.name;
-      pawnsEl.appendChild(pawn);
-    });
     if (tile.i === state.pendingTile && state.phase === 'awaiting_buy') div.classList.add('pending');
     board.appendChild(div);
   }
+
+  syncPawnLayer(state);
 
   // bảng người chơi
   const plist = $('#players-panel'); plist.innerHTML = '';
@@ -415,9 +527,9 @@ function renderGame() {
     const row = document.createElement('div');
     row.className = 'player-row' + (idx === state.turnIndex && state.phase !== 'finished' ? ' active' : '') + (p.bankrupt ? ' dead' : '');
     row.innerHTML = `
-      <span class="dot" style="background:${p.color}"></span>
+      <span class="avatar" style="background:${p.color}">${avatarFor(p.color)}</span>
       <span class="pname">${p.name}${p.id === SESSION ? ' (bạn)' : ''}</span>
-      <span class="pmoney">${p.bankrupt ? 'Phá sản' : fmt(p.money) + 'tr'}</span>
+      <span class="pmoney">${p.bankrupt ? 'Phá sản' : '🪙 ' + fmt(p.money) + 'tr'}</span>
       ${p.inJail ? '<span class="jail-badge">🔒 tù</span>' : ''}
     `;
     plist.appendChild(row);
@@ -473,8 +585,8 @@ $('#btn-join-room').onclick = () => {
   joinRoom(code, name, color);
 };
 $('#btn-start-game').onclick = doStartGame;
-$('#btn-roll').onclick = doRollDice;
-$('#btn-roll-jail').onclick = doRollDice;
+$('#btn-roll').onclick = doRollDiceAnimated;
+$('#btn-roll-jail').onclick = doRollDiceAnimated;
 $('#btn-pay-bail').onclick = doPayBail;
 $('#btn-end-turn').onclick = doEndTurn;
 
