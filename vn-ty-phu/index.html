@@ -9,28 +9,32 @@
 <body>
 
 <section id="screen-home">
-  <div class="home-card">
-    <h1>Cờ Tỷ Phú Việt Nam</h1>
-    <p class="tagline">Mua bán tỉnh thành, thu tiền thuê, làm giàu cùng bạn bè — chơi online theo thời gian thực.</p>
-
-    <div class="field">
-      <label>Tên của bạn</label>
-      <input type="text" id="input-name" placeholder="Nhập tên hiển thị" maxlength="18">
-    </div>
-    <div class="field">
-      <label>Màu quân cờ</label>
-      <div id="color-swatches"></div>
-      <input type="hidden" id="input-color">
+  <div class="menu-wrap">
+    <div class="menu-topbar">
+      <div id="profile-card" class="profile-card hidden">
+        <img id="profile-avatar" src="" alt="">
+        <span id="profile-name"></span>
+      </div>
+      <div class="menu-title-ribbon">CỜ TỶ PHÚ VIỆT NAM</div>
     </div>
 
-    <div class="home-actions">
-      <button id="btn-create-room" class="btn primary">Tạo phòng mới</button>
-    </div>
-    <div class="field" style="margin-top:18px;">
-      <label>Hoặc tham gia bằng mã phòng</label>
-      <div class="join-row">
-        <input type="text" id="input-code" placeholder="VD: AB12CD" maxlength="6" style="text-transform:uppercase;">
-        <button id="btn-join-room" class="btn">Tham gia</button>
+    <div class="menu-card">
+      <div class="field">
+        <label>Tên hiển thị</label>
+        <input type="text" id="input-name" placeholder="Nhập tên của bạn" maxlength="18">
+      </div>
+
+      <div class="field">
+        <label>Chọn nhân vật</label>
+        <div id="character-picker" class="character-picker"></div>
+      </div>
+
+      <div class="menu-actions">
+        <button id="btn-create-room" class="btn primary big">🎲 Tạo Phòng Mới</button>
+        <div class="join-row">
+          <input type="text" id="input-code" placeholder="Nhập mã phòng, vd: AB12CD" maxlength="6" style="text-transform:uppercase;">
+          <button id="btn-join-room" class="btn big">Tham Gia</button>
+        </div>
       </div>
     </div>
   </div>
@@ -48,6 +52,7 @@
 
 <section id="screen-game" class="hidden">
   <div id="board-wrap">
+    <button id="btn-toggle-view" class="btn view-toggle-btn">🧊 Xem 3D</button>
     <div id="board-stage">
       <div id="board"></div>
       <div id="pawn-layer"></div>

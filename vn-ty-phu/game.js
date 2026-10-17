@@ -5,16 +5,20 @@ import {
   MAX_JAIL_TURNS, JAIL_BAIL, GROUP_BONUS_MULTIPLIER, GROUP_COLORS,
   CHANCE_CARDS, COMMUNITY_CARDS,
 } from './board-data.js';
+import { CHARACTERS } from './characters.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const PLAYER_COLORS = ['#c1272d', '#2a6f97', '#2e7d4f', '#c9a227', '#7b4fa0', '#d9712b'];
-const PLAYER_AVATARS = ['💼', '🚀', '🐯', '🎩', '🦊', '🦁'];
-function avatarFor(color) {
-  const i = PLAYER_COLORS.indexOf(color);
-  return PLAYER_AVATARS[i >= 0 ? i : 0];
-}
+const MAX_PLAYERS = CHARACTERS.length;
+function charById(id) { return CHARACTERS.find(c => c.id === id) || CHARACTERS[0]; }
 function delay(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+// ---------- Hồ sơ đã lưu trên trình duyệt này (không cần đăng nhập) ----------
+function loadProfile() {
+  try { return JSON.parse(localStorage.getItem('vnty-profile')) || {}; }
+  catch { return {}; }
+}
+function saveProfile(p) { localStorage.setItem('vnty-profile', JSON.stringify(p)); }
 
 // ---------- Phiên của trình duyệt này ----------
 function getSession() {
@@ -50,9 +54,10 @@ function randomCode() {
   return s;
 }
 
-function newPlayer(name, color) {
+function newPlayer(name, characterId) {
+  const c = charById(characterId);
   return {
-    id: SESSION, name, color,
+    id: SESSION, name, characterId: c.id, color: c.color,
     position: 0, money: START_MONEY,
     inJail: false, jailTurns: 0, bankrupt: false,
   };
@@ -67,9 +72,9 @@ function pushLog(state, msg) {
 }
 
 // ---------- Tạo / tham gia phòng ----------
-async function createRoom(name, color) {
+async function createRoom(name, characterId) {
   const state = {
-    players: [newPlayer(name, color)],
+    players: [newPlayer(name, characterId)],
     turnIndex: 0,
     phase: 'idle',
     properties: {},
@@ -89,7 +94,7 @@ async function createRoom(name, color) {
   enterRoom(data);
 }
 
-async function joinRoom(code, name, color) {
+async function joinRoom(code, name, characterId) {
   const { data, error } = await supabase
     .from('rooms')
     .select()
@@ -99,8 +104,8 @@ async function joinRoom(code, name, color) {
   if (data.status !== 'waiting') { alert('Ván chơi đã bắt đầu hoặc đã kết thúc.'); return; }
   const state = clone(data.state);
   if (!state.players.some(p => p.id === SESSION)) {
-    if (state.players.length >= 6) { alert('Phòng đã đủ người chơi (tối đa 6).'); return; }
-    state.players.push(newPlayer(name, color));
+    if (state.players.length >= MAX_PLAYERS) { alert(`Phòng đã đủ người chơi (tối đa ${MAX_PLAYERS}).`); return; }
+    state.players.push(newPlayer(name, characterId));
     pushLog(state, `${name} đã vào phòng.`);
     await updateRoom(data.id, { state });
   }
@@ -409,11 +414,12 @@ function syncPawnLayer(state) {
   // tạo quân cờ còn thiếu
   for (const p of alive) {
     if (!layer.querySelector(`[data-pid="${p.id}"]`)) {
+      const c = charById(p.characterId);
       const el = document.createElement('div');
       el.className = 'pawn-token';
       el.dataset.pid = p.id;
-      el.style.background = p.color;
-      el.textContent = avatarFor(p.color);
+      el.style.background = c.color;
+      el.innerHTML = `<img src="${c.token}" alt="">`;
       el.title = p.name;
       layer.appendChild(el);
       placeToken(el, p.position, alive.indexOf(p));
@@ -480,7 +486,8 @@ function renderLobby() {
   const ul = $('#lobby-players'); ul.innerHTML = '';
   for (const p of room.state.players) {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}${p.id === room.host_session ? ' (chủ phòng)' : ''}`;
+    const c = charById(p.characterId);
+    li.innerHTML = `<img class="avatar-thumb" src="${c.portrait}" alt=""><span>${p.name}${p.id === room.host_session ? ' (chủ phòng)' : ''}</span>`;
     ul.appendChild(li);
   }
   $('#btn-start-game').classList.toggle('hidden', room.host_session !== SESSION);
@@ -526,8 +533,9 @@ function renderGame() {
   state.players.forEach((p, idx) => {
     const row = document.createElement('div');
     row.className = 'player-row' + (idx === state.turnIndex && state.phase !== 'finished' ? ' active' : '') + (p.bankrupt ? ' dead' : '');
+    const c = charById(p.characterId);
     row.innerHTML = `
-      <span class="avatar" style="background:${p.color}">${avatarFor(p.color)}</span>
+      <img class="avatar" src="${c.portrait}" alt="">
       <span class="pname">${p.name}${p.id === SESSION ? ' (bạn)' : ''}</span>
       <span class="pmoney">${p.bankrupt ? 'Phá sản' : '🪙 ' + fmt(p.money) + 'tr'}</span>
       ${p.inJail ? '<span class="jail-badge">🔒 tù</span>' : ''}
@@ -572,36 +580,63 @@ function renderGame() {
 }
 
 // ---------- Gắn sự kiện giao diện ----------
+const profile = loadProfile();
+let selectedCharacter = charById(profile.characterId || CHARACTERS[0].id).id;
+if (profile.name) $('#input-name').value = profile.name;
+
+function renderCharacterPicker() {
+  $('#character-picker').innerHTML = CHARACTERS.map(c => `
+    <div class="char-card ${c.id === selectedCharacter ? 'picked' : ''}" data-id="${c.id}">
+      <img src="${c.portrait}" alt="${c.name}">
+      <div class="char-name" style="background:${c.color}">${c.name}</div>
+      <div class="char-tagline">${c.tagline}</div>
+    </div>
+  `).join('');
+  document.querySelectorAll('.char-card').forEach(el => {
+    el.onclick = () => { selectedCharacter = el.dataset.id; renderCharacterPicker(); };
+  });
+}
+renderCharacterPicker();
+
+function currentNameInput() { return $('#input-name').value.trim() || 'Người chơi'; }
+
+$('#profile-card').classList.toggle('hidden', !profile.name);
+if (profile.name) {
+  const c = charById(profile.characterId);
+  $('#profile-name').textContent = profile.name;
+  $('#profile-avatar').src = c.portrait;
+}
+
 $('#btn-create-room').onclick = () => {
-  const name = $('#input-name').value.trim() || 'Người chơi';
-  const color = $('#input-color').value;
-  createRoom(name, color);
+  const name = currentNameInput();
+  saveProfile({ name, characterId: selectedCharacter });
+  createRoom(name, selectedCharacter);
 };
 $('#btn-join-room').onclick = () => {
-  const name = $('#input-name').value.trim() || 'Người chơi';
-  const color = $('#input-color').value;
+  const name = currentNameInput();
   const code = $('#input-code').value.trim();
   if (!code) { alert('Nhập mã phòng để tham gia.'); return; }
-  joinRoom(code, name, color);
+  saveProfile({ name, characterId: selectedCharacter });
+  joinRoom(code, name, selectedCharacter);
 };
+const stage = $('#board-stage');
+const viewBtn = $('#btn-toggle-view');
+function applyTiltPref() {
+  const tilted = localStorage.getItem('vnty-tilt') !== 'off'; // mặc định bật 3D
+  stage.classList.toggle('tilted', tilted);
+  viewBtn.textContent = tilted ? '🗺️ Xem phẳng' : '🧊 Xem 3D';
+}
+viewBtn.onclick = () => {
+  const nowTilted = !stage.classList.contains('tilted');
+  localStorage.setItem('vnty-tilt', nowTilted ? 'on' : 'off');
+  applyTiltPref();
+};
+applyTiltPref();
+
 $('#btn-start-game').onclick = doStartGame;
 $('#btn-roll').onclick = doRollDiceAnimated;
 $('#btn-roll-jail').onclick = doRollDiceAnimated;
 $('#btn-pay-bail').onclick = doPayBail;
 $('#btn-end-turn').onclick = doEndTurn;
-
-let colorIdx = 0;
-$('#input-color').value = PLAYER_COLORS[0];
-$('#color-swatches').innerHTML = PLAYER_COLORS.map((c, i) =>
-  `<span class="swatch-pick" data-i="${i}" style="background:${c}"></span>`).join('');
-document.querySelectorAll('.swatch-pick').forEach(el => {
-  el.onclick = () => {
-    colorIdx = Number(el.dataset.i);
-    $('#input-color').value = PLAYER_COLORS[colorIdx];
-    document.querySelectorAll('.swatch-pick').forEach(s => s.classList.remove('picked'));
-    el.classList.add('picked');
-  };
-});
-document.querySelector('.swatch-pick')?.classList.add('picked');
 
 showScreen('home');
