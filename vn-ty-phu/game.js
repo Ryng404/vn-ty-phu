@@ -6,6 +6,7 @@ import {
   CHANCE_CARDS, COMMUNITY_CARDS,
 } from './board-data.js';
 import { CHARACTERS } from './characters.js';
+import { burstConfetti, burstCoins } from './effects.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -35,6 +36,8 @@ const SESSION = getSession();
 let room = null;       // bản ghi room hiện tại từ Supabase
 let channel = null;
 let lastSeenMoveSeq = 0;   // chống phát lại hoạt ảnh di chuyển khi tải lại trang
+let lastMyMoney = null;    // để phát hiệu ứng đồng xu khi tiền của mình tăng
+let lastWinnerSeen = undefined; // để chỉ nổ pháo giấy đúng 1 lần khi có người thắng
 
 // ---------- DOM ----------
 const $ = (sel) => document.querySelector(sel);
@@ -121,6 +124,9 @@ async function updateRoom(id, patch) {
 function enterRoom(row) {
   room = row;
   lastSeenMoveSeq = row.state?.moveSeq || 0;
+  lastWinnerSeen = row.state?.winner || null;
+  const me0 = row.state?.players?.find(p => p.id === SESSION);
+  lastMyMoney = me0 ? me0.money : null;
   if (channel) supabase.removeChannel(channel);
   channel = supabase
     .channel('room-' + row.id)
@@ -494,8 +500,25 @@ function renderLobby() {
   $('#lobby-wait-msg').classList.toggle('hidden', room.host_session === SESSION);
 }
 
+function checkEffectTriggers(state) {
+  const me = state.players.find(p => p.id === SESSION);
+  if (me && !me.bankrupt) {
+    if (lastMyMoney !== null && me.money > lastMyMoney) {
+      const anchor = $('#dice-result') || $('#controls');
+      const r = anchor.getBoundingClientRect();
+      burstCoins(r.left + r.width / 2, r.top + r.height / 2, 12);
+    }
+    lastMyMoney = me.money;
+  }
+  if (state.winner && state.winner !== lastWinnerSeen) {
+    burstConfetti();
+  }
+  lastWinnerSeen = state.winner || null;
+}
+
 function renderGame() {
   const state = room.state;
+  checkEffectTriggers(state);
   const board = $('#board'); board.innerHTML = '';
 
   // ô giữa bàn cờ
