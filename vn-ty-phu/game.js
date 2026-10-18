@@ -14,12 +14,51 @@ const MAX_PLAYERS = CHARACTERS.length;
 function charById(id) { return CHARACTERS.find(c => c.id === id) || CHARACTERS[0]; }
 function delay(ms) { return new Promise(res => setTimeout(res, ms)); }
 
-// ---------- Hồ sơ đã lưu trên trình duyệt này (không cần đăng nhập) ----------
-function loadProfile() {
-  try { return JSON.parse(localStorage.getItem('vnty-profile')) || {}; }
+// ---------- Tài khoản lưu cục bộ trên trình duyệt ----------
+// Lưu ý: đây KHÔNG phải hệ thống bảo mật thật — mật khẩu không mã hoá,
+// không đồng bộ giữa các thiết bị khác nhau. Chỉ để có giao diện đăng
+// nhập/đăng ký và ghi nhớ tên + nhân vật cho từng người dùng chung máy.
+function loadAccounts() {
+  try { return JSON.parse(localStorage.getItem('vnty-accounts')) || {}; }
   catch { return {}; }
 }
-function saveProfile(p) { localStorage.setItem('vnty-profile', JSON.stringify(p)); }
+function saveAccounts(accounts) { localStorage.setItem('vnty-accounts', JSON.stringify(accounts)); }
+function getCurrentEmail() { return localStorage.getItem('vnty-current-email'); }
+function setCurrentEmail(email) { localStorage.setItem('vnty-current-email', email); }
+function clearCurrentEmail() { localStorage.removeItem('vnty-current-email'); }
+
+function signUp(email, password) {
+  const accounts = loadAccounts();
+  if (accounts[email]) return { ok: false, error: 'Email này đã có tài khoản. Hãy đăng nhập.' };
+  if (!email.includes('@')) return { ok: false, error: 'Email không hợp lệ.' };
+  if (password.length < 4) return { ok: false, error: 'Mật khẩu cần ít nhất 4 ký tự.' };
+  accounts[email] = { password, name: '', characterId: CHARACTERS[0].id };
+  saveAccounts(accounts);
+  setCurrentEmail(email);
+  return { ok: true };
+}
+function logIn(email, password) {
+  const accounts = loadAccounts();
+  const acc = accounts[email];
+  if (!acc || acc.password !== password) return { ok: false, error: 'Email hoặc mật khẩu không đúng.' };
+  setCurrentEmail(email);
+  return { ok: true };
+}
+function logOut() { clearCurrentEmail(); }
+function currentAccount() {
+  const email = getCurrentEmail();
+  if (!email) return null;
+  const accounts = loadAccounts();
+  return accounts[email] ? { email, ...accounts[email] } : null;
+}
+function updateCurrentAccount(patch) {
+  const email = getCurrentEmail();
+  if (!email) return;
+  const accounts = loadAccounts();
+  if (!accounts[email]) return;
+  accounts[email] = { ...accounts[email], ...patch };
+  saveAccounts(accounts);
+}
 
 // ---------- Phiên của trình duyệt này ----------
 function getSession() {
@@ -42,6 +81,7 @@ let lastWinnerSeen = undefined; // để chỉ nổ pháo giấy đúng 1 lần 
 // ---------- DOM ----------
 const $ = (sel) => document.querySelector(sel);
 const screens = {
+  auth: $('#screen-auth'),
   home: $('#screen-home'),
   lobby: $('#screen-lobby'),
   game: $('#screen-game'),
@@ -602,10 +642,41 @@ function renderGame() {
   }
 }
 
-// ---------- Gắn sự kiện giao diện ----------
-const profile = loadProfile();
-let selectedCharacter = charById(profile.characterId || CHARACTERS[0].id).id;
-if (profile.name) $('#input-name').value = profile.name;
+// ---------- Màn hình đăng nhập / đăng ký ----------
+let authMode = 'login';
+function setAuthMode(mode) {
+  authMode = mode;
+  $('#tab-login').classList.toggle('active', mode === 'login');
+  $('#tab-signup').classList.toggle('active', mode === 'signup');
+  $('#btn-auth-submit').textContent = mode === 'login' ? 'Đăng Nhập' : 'Đăng Ký';
+  $('#auth-error').classList.add('hidden');
+}
+$('#tab-login').onclick = () => setAuthMode('login');
+$('#tab-signup').onclick = () => setAuthMode('signup');
+
+function showAuthError(msg) {
+  $('#auth-error').textContent = msg;
+  $('#auth-error').classList.remove('hidden');
+}
+
+$('#btn-auth-submit').onclick = () => {
+  const email = $('#auth-email').value.trim().toLowerCase();
+  const password = $('#auth-password').value;
+  if (!email || !password) { showAuthError('Nhập đủ email và mật khẩu.'); return; }
+  const result = authMode === 'login' ? logIn(email, password) : signUp(email, password);
+  if (!result.ok) { showAuthError(result.error); return; }
+  enterMainMenu();
+};
+$('#btn-logout').onclick = () => {
+  logOut();
+  $('#auth-email').value = '';
+  $('#auth-password').value = '';
+  setAuthMode('login');
+  showScreen('auth');
+};
+
+// ---------- Main menu ----------
+let selectedCharacter = CHARACTERS[0].id;
 
 function renderCharacterPicker() {
   $('#character-picker').innerHTML = CHARACTERS.map(c => `
@@ -619,27 +690,33 @@ function renderCharacterPicker() {
     el.onclick = () => { selectedCharacter = el.dataset.id; renderCharacterPicker(); };
   });
 }
-renderCharacterPicker();
 
 function currentNameInput() { return $('#input-name').value.trim() || 'Người chơi'; }
 
-$('#profile-card').classList.toggle('hidden', !profile.name);
-if (profile.name) {
-  const c = charById(profile.characterId);
-  $('#profile-name').textContent = profile.name;
-  $('#profile-avatar').src = c.portrait;
+function enterMainMenu() {
+  const acc = currentAccount();
+  if (!acc) { showScreen('auth'); return; }
+  selectedCharacter = charById(acc.characterId || CHARACTERS[0].id).id;
+  $('#input-name').value = acc.name || '';
+  renderCharacterPicker();
+  $('#profile-card').classList.toggle('hidden', !acc.name);
+  if (acc.name) {
+    $('#profile-name').textContent = acc.name;
+    $('#profile-avatar').src = charById(acc.characterId).portrait;
+  }
+  showScreen('home');
 }
 
 $('#btn-create-room').onclick = () => {
   const name = currentNameInput();
-  saveProfile({ name, characterId: selectedCharacter });
+  updateCurrentAccount({ name, characterId: selectedCharacter });
   createRoom(name, selectedCharacter);
 };
 $('#btn-join-room').onclick = () => {
   const name = currentNameInput();
   const code = $('#input-code').value.trim();
   if (!code) { alert('Nhập mã phòng để tham gia.'); return; }
-  saveProfile({ name, characterId: selectedCharacter });
+  updateCurrentAccount({ name, characterId: selectedCharacter });
   joinRoom(code, name, selectedCharacter);
 };
 const stage = $('#board-stage');
@@ -662,4 +739,8 @@ $('#btn-roll-jail').onclick = doRollDiceAnimated;
 $('#btn-pay-bail').onclick = doPayBail;
 $('#btn-end-turn').onclick = doEndTurn;
 
-showScreen('home');
+if (currentAccount()) {
+  enterMainMenu();
+} else {
+  showScreen('auth');
+}

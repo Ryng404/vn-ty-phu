@@ -8,7 +8,33 @@
 </head>
 <body>
 
-<section id="screen-home">
+<section id="screen-auth">
+  <div class="menu-wrap">
+    <div class="menu-title-ribbon full">CỜ TỶ PHÚ VIỆT NAM</div>
+    <div class="menu-card auth-card">
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active">Đăng Nhập</button>
+        <button id="tab-signup" class="auth-tab">Đăng Ký</button>
+      </div>
+
+      <div id="auth-error" class="auth-error hidden"></div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="text" id="auth-email" placeholder="ban@example.com" autocomplete="username">
+      </div>
+      <div class="field">
+        <label>Mật khẩu</label>
+        <input type="password" id="auth-password" placeholder="Nhập mật khẩu" autocomplete="current-password">
+      </div>
+
+      <button id="btn-auth-submit" class="btn primary big" style="width:100%;margin-top:8px;">Đăng Nhập</button>
+      <p class="auth-hint">Tài khoản lưu trên trình duyệt này, không đồng bộ giữa các máy khác nhau.</p>
+    </div>
+  </div>
+</section>
+
+<section id="screen-home" class="hidden">
   <div class="menu-wrap">
     <div class="menu-topbar">
       <div id="profile-card" class="profile-card hidden">
@@ -16,6 +42,7 @@
         <span id="profile-name"></span>
       </div>
       <div class="menu-title-ribbon">CỜ TỶ PHÚ VIỆT NAM</div>
+      <button id="btn-logout" class="btn logout-btn">Đăng xuất</button>
     </div>
 
     <div class="menu-card">
