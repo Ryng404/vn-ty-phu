@@ -7,6 +7,7 @@ import {
 } from './board-data.js';
 import { CHARACTERS } from './characters.js';
 import { burstConfetti, burstCoins } from './effects.js';
+import { createDiceScene, createCharacterCanvas } from './render3d.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -321,25 +322,22 @@ async function doStartGame() {
   await updateRoom(room.id, { status: 'playing', state });
 }
 
+let diceScene = null;
+
 async function doRollDiceAnimated() {
   const state0 = room.state;
   if (!isMyTurn(state0) || state0.phase !== 'idle') return;
-  const el = $('#dice-result');
-  el.classList.add('shaking');
-  const timer = setInterval(() => {
-    const a = 1 + Math.floor(Math.random() * 6);
-    const b = 1 + Math.floor(Math.random() * 6);
-    el.textContent = `🎲 ${a}  🎲 ${b}`;
-  }, 70);
-  await delay(480);
-  clearInterval(timer);
-  el.classList.remove('shaking');
-  await doRollDice();
+  if (!diceScene) diceScene = createDiceScene($('#dice-3d'));
+  diceScene.shake();
+  $('#dice-result').textContent = '🎲 Đang đổ xúc xắc...';
+  await delay(500);
+  const result = await doRollDice();
+  if (result) diceScene.settle(result);
 }
 
 async function doRollDice() {
   const state = clone(room.state);
-  if (!isMyTurn(state) || state.phase !== 'idle') return;
+  if (!isMyTurn(state) || state.phase !== 'idle') return null;
   const d1 = 1 + Math.floor(Math.random() * 6);
   const d2 = 1 + Math.floor(Math.random() * 6);
   state.lastDice = [d1, d2];
@@ -370,6 +368,7 @@ async function doRollDice() {
     movePlayer(state, player, d1 + d2);
   }
   await updateRoom(room.id, { state });
+  return [d1, d2];
 }
 
 async function doPayBail() {
@@ -464,9 +463,8 @@ function syncPawnLayer(state) {
       const el = document.createElement('div');
       el.className = 'pawn-token';
       el.dataset.pid = p.id;
-      el.style.background = c.color;
-      el.innerHTML = `<img src="${c.token}" alt="">`;
       el.title = p.name;
+      el.appendChild(createCharacterCanvas(c, 64));
       layer.appendChild(el);
       placeToken(el, p.position, alive.indexOf(p));
     }

@@ -332,7 +332,7 @@ input[type="text"]:focus { outline: none; border-color: var(--gold); }
   transition: left 0.22s ease, top 0.22s ease;
   z-index: 5;
 }
-.pawn-token img { width: 100%; display: block; }
+.pawn-token canvas { width: 100%; height: auto; display: block; }
 .pawn-token.pop { animation: tokenPop 0.26s ease; }
 @keyframes tokenPop {
   0% { transform: translate(-50%, -78%) scale(1); }
@@ -369,6 +369,12 @@ input[type="text"]:focus { outline: none; border-color: var(--gold); }
 .jail-badge { font-size: 0.7rem; }
 
 #turn-info { font-weight: 700; margin-bottom: 6px; }
+.dice-3d {
+  width: 100%; height: 90px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 4px;
+}
+.dice-3d canvas { max-width: 100%; max-height: 100%; }
 #dice-result {
   font-size: 1.25rem; margin-bottom: 10px; color: var(--gold); font-weight: 700;
   min-height: 1.6em;
